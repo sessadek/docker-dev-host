@@ -1,0 +1,89 @@
+networks:
+  public-dev:
+    external: true
+    name: public-dev
+  traefik-global-proxy:
+    external: true
+    name: traefik-global-proxy
+services:
+  dnsmasq:
+    container_name: dnsmasq
+    image: 4km3/dnsmasq
+    networks:
+      - public-dev
+      - traefik-global-proxy
+    profiles:
+      - deprecated
+    restart: unless-stopped
+    command: -A /docker.devhost/127.0.0.1
+    ports:
+      - "0.0.0.0:53:53/udp"
+      - "0.0.0.0:53:53/tcp"
+    cap_add:
+      - NET_ADMIN
+  traefik2:
+    image: traefik:2.11
+    networks:
+      - public-dev
+      - traefik-global-proxy
+    container_name: traefik
+    restart: unless-stopped
+    profiles:
+      - common
+    security_opt:
+      - no-new-privileges:true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"      
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.traefik=true
+      - traefik.http.routers.traefik.tls=true
+      - traefik.http.routers.traefik.rule=Host(`traefik.docker.localhost`,`traefik.docker.devhost`)
+      - traefik.http.services.traefik.loadbalancer.server.port=8080
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik-data/configurations/dynamic.yml:/etc/traefik/dynamic_conf.yaml:ro
+      - ./traefik-data/traefik.yml:/etc/traefik/traefik.yaml:ro
+      - ./traefik-data/certs:/etc/certs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+  portainer:
+    image: portainer/portainer-ce:2.19.4-alpine
+    container_name: portainer
+    restart: unless-stopped
+    networks:
+      - public-dev
+      - traefik-global-proxy
+    profiles:
+      - common
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.portainer=true
+      - traefik.http.routers.portainer.entrypoints=websecure
+      - traefik.http.routers.portainer.rule=Host(`portainer.docker.localhost`,`portainer.docker.devhost`)
+      - traefik.http.routers.portainer.tls=true
+      - traefik.http.routers.portainer.service=portainer
+      - traefik.http.middlewares.portainer.redirectscheme.scheme=https
+      - traefik.http.middlewares.portainer.redirectscheme.permanent=true
+      - traefik.http.services.portainer.loadbalancer.server.port=9000
+      - traefik.http.services.portainer.loadbalancer.server.scheme=http
+  hello_word:
+    container_name: demo_docker_hello_word
+    image: tutum/hello-world
+    networks:
+      - public-dev
+      - traefik-global-proxy
+    profiles:
+      - test
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.hello_word.rule=Host(`hello.docker.localhost`,`hello.docker.devhost`)
+      - traefik.http.routers.hello_word.tls=true
+volumes:
+  portainer_data:
